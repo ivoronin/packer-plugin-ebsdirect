@@ -20,6 +20,9 @@ type PostProcessor struct {
 }
 
 func (p *PostProcessor) PostProcess(ctx context.Context, ui packer.Ui, artifact packer.Artifact) (packer.Artifact, bool, bool, error) {
+	if p.config.kmsKeyIgnored() {
+		ui.Say("ebsdirect: ignoring ami_kms_key because ami_encrypt is false")
+	}
 	path, err := pickSourceFile(artifact)
 	if err != nil {
 		return nil, false, false, err

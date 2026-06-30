@@ -22,6 +22,8 @@ type Config struct {
 	Region         string            `mapstructure:"region"`
 	Tags           map[string]string `mapstructure:"tags"`
 	SnapshotTags   map[string]string `mapstructure:"snapshot_tags"`
+	Encrypt        bool              `mapstructure:"ami_encrypt"`
+	KMSKey         string            `mapstructure:"ami_kms_key"`
 }
 
 const (
@@ -61,6 +63,13 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("boot_mode must be legacy-bios, uefi, or uefi-preferred, got %q", c.BootMode)
 	}
 	return nil
+}
+
+// kmsKeyIgnored reports whether an ami_kms_key was set while ami_encrypt is off,
+// in which case the key is dropped (parity with amazon-import). PostProcess
+// warns on this; the engine gate in kmsKeyArn enforces it.
+func (c *Config) kmsKeyIgnored() bool {
+	return c.KMSKey != "" && !c.Encrypt
 }
 
 func (p *PostProcessor) Configure(raws ...interface{}) error {

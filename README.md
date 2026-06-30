@@ -38,6 +38,7 @@ Available on the [Packer integrations registry](https://developer.hashicorp.com/
 - Parallel block upload (64 workers) with retry on throttling.
 - Per-block SHA-256 plus a LINEAR aggregate checksum that AWS validates at `CompleteSnapshot`.
 - Registers a modern HVM AMI: ENA enabled, gp3 root volume (16 TiB ceiling), `x86_64` or `arm64`, boot mode `legacy-bios` / `uefi` / `uefi-preferred`.
+- Optional snapshot encryption (`ami_encrypt` / `ami_kms_key`) with the account default or a customer-managed KMS key.
 
 ## Installation
 
@@ -97,6 +98,8 @@ The same shape works after a `qemu` build that outputs a raw disk. The post-proc
 | `region` | no | from the SDK chain | Target region; otherwise `AWS_REGION` or the active profile. |
 | `tags` | no | - | Tags applied to the AMI. |
 | `snapshot_tags` | no | - | Tags applied to the snapshot. |
+| `ami_encrypt` | no | `false` | Request encryption of the snapshot (and the resulting AMI). An account/region with EBS encryption-by-default still produces an encrypted snapshot regardless. |
+| `ami_kms_key` | no | account default EBS key | KMS key ARN for the encrypted snapshot. Requires `ami_encrypt = true`; ignored otherwise. |
 
 Credentials are read from the default AWS SDK chain (environment, `AWS_PROFILE` / shared config, SSO, instance role). There are no credential fields in the template.
 
@@ -119,10 +122,17 @@ Credentials are read from the default AWS SDK chain (environment, `AWS_PROFILE` 
       "Effect": "Allow",
       "Action": ["ec2:RegisterImage", "ec2:DescribeSnapshots", "ec2:DeregisterImage", "ec2:DeleteSnapshot", "ec2:CreateTags"],
       "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["kms:DescribeKey", "kms:GenerateDataKeyWithoutPlaintext", "kms:CreateGrant", "kms:ReEncrypt*", "kms:Decrypt"],
+      "Resource": "*"
     }
   ]
 }
 ```
+
+The KMS actions are only needed when `ami_encrypt` is used with a customer-managed key; the account default EBS key is already usable by account principals.
 
 ## License
 

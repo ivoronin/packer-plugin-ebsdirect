@@ -31,6 +31,8 @@ func run(ctx context.Context, deps awsDeps, cfg Config, src io.ReaderAt, size in
 		SizeBytes:   size,
 		Description: cfg.AMIDescription,
 		Tags:        cfg.SnapshotTags,
+		Encrypt:     cfg.Encrypt,
+		KMSKey:      cfg.KMSKey,
 	})
 	if err != nil {
 		return nil, err

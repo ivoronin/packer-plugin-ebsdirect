@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -43,20 +44,14 @@ func makeImage() (data []byte, nonZero map[int][32]byte) {
 	return data, nonZero
 }
 
-// TestE2EUploadReadBack uploads a synthetic 1 GiB sparse image to AWS EBS,
-// registers it as an AMI, reads the written blocks back via the EBS direct
-// read APIs, and verifies their content matches what was written.
-//
-// Gate: requires PACKER_ACC=1 and AWS credentials with region configured.
-// Teardown: deregisters the AMI and deletes the snapshot via t.Cleanup.
-func TestE2EUploadReadBack(t *testing.T) {
+// newE2EDeps gates on PACKER_ACC, loads the default AWS config, and wires the
+// EBS/EC2 clients into awsDeps shared by the e2e tests. It also returns the ec2
+// and ebs clients for read-side verification.
+func newE2EDeps(t *testing.T) (context.Context, awsDeps, *ec2.Client, *ebs.Client) {
+	t.Helper()
 	if os.Getenv("PACKER_ACC") == "" {
-		t.Skip("set PACKER_ACC=1 and AWS credentials to run the e2e read-back test")
+		t.Skip("set PACKER_ACC=1 and AWS credentials to run the e2e tests")
 	}
-
-	// 1 GiB allocation is deferred until after the gate check.
-	data, nonZero := makeImage()
-
 	ctx := context.Background()
 	cfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
@@ -65,16 +60,28 @@ func TestE2EUploadReadBack(t *testing.T) {
 	if cfg.Region == "" {
 		t.Fatal("AWS region not configured; set AWS_DEFAULT_REGION or profile region")
 	}
-
 	ec2c := ec2.NewFromConfig(cfg)
 	ebsc := ebs.NewFromConfig(cfg)
-	deps := awsDeps{
+	return ctx, awsDeps{
 		writer:    ebsc,
 		waiter:    ec2c,
 		registrar: ec2c,
 		destroyer: ec2c,
 		region:    cfg.Region,
-	}
+	}, ec2c, ebsc
+}
+
+// TestE2EUploadReadBack uploads a synthetic 1 GiB sparse image to AWS EBS,
+// registers it as an AMI, reads the written blocks back via the EBS direct
+// read APIs, and verifies their content matches what was written.
+//
+// Gate: requires PACKER_ACC=1 and AWS credentials with region configured.
+// Teardown: deregisters the AMI and deletes the snapshot via t.Cleanup.
+func TestE2EUploadReadBack(t *testing.T) {
+	ctx, deps, ec2c, ebsc := newE2EDeps(t)
+
+	// 1 GiB allocation is deferred until after the gate check.
+	data, nonZero := makeImage()
 
 	art, err := run(ctx, deps,
 		Config{
@@ -204,4 +211,70 @@ func isResourceNotFound(err error) bool {
 		return apiErr.ErrorCode() == "ResourceNotFoundException"
 	}
 	return false
+}
+
+// TestE2EEncryptedSnapshot uploads a small encrypted snapshot with the account
+// default EBS key and verifies DescribeSnapshots reports it encrypted.
+//
+// Gate: requires PACKER_ACC=1 and AWS credentials with region configured.
+// Teardown: deregisters the AMI and deletes the snapshot via t.Cleanup.
+func TestE2EEncryptedSnapshot(t *testing.T) {
+	ctx, deps, ec2c, _ := newE2EDeps(t)
+
+	data, _ := makeImage()
+
+	art, err := run(ctx, deps,
+		Config{
+			AMIName:        fmt.Sprintf("ebsdirect-e2e-encrypted-%d", time.Now().UnixNano()),
+			Architecture:   "x86_64",
+			RootDeviceName: "/dev/xvda",
+			BootMode:       "legacy-bios",
+			Encrypt:        true, // account default EBS key, no KMSKey
+			Tags:           map[string]string{"ebsdirect-e2e": "1"},
+			SnapshotTags:   map[string]string{"ebsdirect-e2e": "1"},
+		},
+		bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	t.Cleanup(func() { _ = art.Destroy() })
+
+	// The snapshot must be encrypted.
+	out, err := ec2c.DescribeSnapshots(ctx, &ec2.DescribeSnapshotsInput{
+		SnapshotIds: []string{art.snapshotID},
+	})
+	if err != nil {
+		t.Fatalf("describe snapshots: %v", err)
+	}
+	if len(out.Snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(out.Snapshots))
+	}
+	if !aws.ToBool(out.Snapshots[0].Encrypted) {
+		t.Fatal("snapshot is not encrypted")
+	}
+	if aws.ToString(out.Snapshots[0].KmsKeyId) == "" {
+		t.Fatal("encrypted snapshot has no KmsKeyId")
+	}
+
+	// The registered AMI must inherit the snapshot's encryption on its root
+	// block device. registrar.go relies on this inheritance and does not set
+	// encryption explicitly, so the e2e proves it end to end.
+	di, err := ec2c.DescribeImages(ctx, &ec2.DescribeImagesInput{
+		ImageIds: []string{art.amiID},
+	})
+	if err != nil {
+		t.Fatalf("describe images: %v", err)
+	}
+	if len(di.Images) != 1 {
+		t.Fatalf("expected 1 image, got %d", len(di.Images))
+	}
+	var rootEncrypted bool
+	for _, bdm := range di.Images[0].BlockDeviceMappings {
+		if bdm.Ebs != nil && aws.ToBool(bdm.Ebs.Encrypted) {
+			rootEncrypted = true
+		}
+	}
+	if !rootEncrypted {
+		t.Fatal("registered AMI root block device is not encrypted")
+	}
 }

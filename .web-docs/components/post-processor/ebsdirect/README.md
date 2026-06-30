@@ -26,6 +26,8 @@ trust policy.
 - `region` (string) - Target region; otherwise `AWS_REGION` or the active profile. Defaults to the SDK chain.
 - `tags` (map of string) - Tags applied to the AMI.
 - `snapshot_tags` (map of string) - Tags applied to the snapshot.
+- `ami_encrypt` (bool) - Request encryption of the snapshot and the resulting AMI. Defaults to `false`. An account/region with EBS encryption-by-default still produces an encrypted snapshot regardless.
+- `ami_kms_key` (string) - KMS key ARN for the encrypted snapshot. Requires `ami_encrypt = true`; ignored otherwise. Defaults to the account default EBS key.
 
 Credentials are read from the default AWS SDK chain (environment, `AWS_PROFILE` /
 shared config, SSO, instance role). There are no credential fields in the template.
@@ -70,7 +72,14 @@ build {
       "Effect": "Allow",
       "Action": ["ec2:RegisterImage", "ec2:DescribeSnapshots", "ec2:DeregisterImage", "ec2:DeleteSnapshot", "ec2:CreateTags"],
       "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["kms:DescribeKey", "kms:GenerateDataKeyWithoutPlaintext", "kms:CreateGrant", "kms:ReEncrypt*", "kms:Decrypt"],
+      "Resource": "*"
     }
   ]
 }
 ```
+
+The KMS actions are only needed when `ami_encrypt` is used with a customer-managed key; the account default EBS key is already usable by account principals.

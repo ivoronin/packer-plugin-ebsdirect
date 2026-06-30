@@ -18,12 +18,14 @@ import (
 
 type fakeWriter struct {
 	mu        sync.Mutex
+	started   *ebs.StartSnapshotInput
 	putIdx    []int32
 	completed *ebs.CompleteSnapshotInput
 	putErr    error
 }
 
 func (f *fakeWriter) StartSnapshot(_ context.Context, in *ebs.StartSnapshotInput, _ ...func(*ebs.Options)) (*ebs.StartSnapshotOutput, error) {
+	f.started = in
 	return &ebs.StartSnapshotOutput{SnapshotId: aws.String("snap-test"), BlockSize: aws.Int32(4)}, nil
 }
 
@@ -178,5 +180,40 @@ func TestWaitCompletedTimeout(t *testing.T) {
 	}
 	if err := waitCompleted(context.Background(), w, "snap", 0, 3); err == nil {
 		t.Fatal("want timeout error when snapshot never completes")
+	}
+}
+
+func TestUploadEncryption(t *testing.T) {
+	const arn = "arn:aws:kms:eu-central-1:111122223333:key/abc"
+	cases := []struct {
+		name        string
+		encrypt     bool
+		kmsKey      string
+		wantEncrypt bool
+		wantKey     string // "" means expect KmsKeyArn == nil
+	}{
+		{"encrypt with key", true, arn, true, arn},
+		{"encrypt default key", true, "", true, ""},
+		{"key ignored without encrypt", false, arn, false, ""},
+		{"neither", false, "", false, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := &fakeWriter{}
+			if _, err := upload(context.Background(), w, fakeWaiter{}, uploadInput{
+				Source:    bytes.NewReader([]byte{1, 2, 3, 4}),
+				SizeBytes: 4,
+				Encrypt:   tc.encrypt,
+				KMSKey:    tc.kmsKey,
+			}); err != nil {
+				t.Fatalf("upload: %v", err)
+			}
+			if got := aws.ToBool(w.started.Encrypted); got != tc.wantEncrypt {
+				t.Fatalf("Encrypted: got %v, want %v", got, tc.wantEncrypt)
+			}
+			if got := aws.ToString(w.started.KmsKeyArn); got != tc.wantKey {
+				t.Fatalf("KmsKeyArn: got %q, want %q", got, tc.wantKey)
+			}
+		})
 	}
 }

@@ -38,6 +38,8 @@ type uploadInput struct {
 	SizeBytes   int64
 	Description string
 	Tags        map[string]string
+	Encrypt     bool
+	KMSKey      string
 }
 
 // upload writes src into a new EBS snapshot via the EBS direct APIs and waits
@@ -49,6 +51,8 @@ func upload(ctx context.Context, w snapshotWriter, waiter snapshotWaiter, in upl
 		Timeout:     aws.Int32(snapshotTimeoutMinutes),
 		Description: optionalString(in.Description),
 		Tags:        ebsTags(in.Tags),
+		Encrypted:   aws.Bool(in.Encrypt),
+		KmsKeyArn:   kmsKeyArn(in.Encrypt, in.KMSKey),
 	})
 	if err != nil {
 		return "", fmt.Errorf("start snapshot: %w", err)
@@ -165,6 +169,16 @@ func optionalString(s string) *string {
 		return nil
 	}
 	return aws.String(s)
+}
+
+// kmsKeyArn returns the KMS key ARN only when encryption is on; an empty key
+// under encryption falls back to the default EBS key, and a key without
+// encryption is ignored (parity with amazon-import).
+func kmsKeyArn(encrypt bool, key string) *string {
+	if !encrypt {
+		return nil
+	}
+	return optionalString(key)
 }
 
 func ebsTags(m map[string]string) []ebstypes.Tag {
