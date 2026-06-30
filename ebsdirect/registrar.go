@@ -20,6 +20,7 @@ type registerInput struct {
 	Architecture   string
 	RootDeviceName string
 	BootMode       string
+	IMDSSupport    string
 	Tags           map[string]string
 }
 
@@ -48,6 +49,9 @@ func register(ctx context.Context, r imageRegistrar, in registerInput) (string, 
 			ResourceType: ec2types.ResourceTypeImage,
 			Tags:         ec2Tags(in.Tags),
 		}}
+	}
+	if in.IMDSSupport != "" {
+		input.ImdsSupport = ec2types.ImdsSupportValues(in.IMDSSupport)
 	}
 	out, err := r.RegisterImage(ctx, input)
 	if err != nil {

@@ -278,3 +278,43 @@ func TestE2EEncryptedSnapshot(t *testing.T) {
 		t.Fatal("registered AMI root block device is not encrypted")
 	}
 }
+
+// TestE2EIMDSSupport registers an AMI with imds_support=v2.0 and verifies
+// DescribeImages reports it on the AMI.
+//
+// Gate: requires PACKER_ACC=1 and AWS credentials with region configured.
+// Teardown: deregisters the AMI and deletes the snapshot via t.Cleanup.
+func TestE2EIMDSSupport(t *testing.T) {
+	ctx, deps, ec2c, _ := newE2EDeps(t)
+
+	data, _ := makeImage()
+
+	art, err := run(ctx, deps,
+		Config{
+			AMIName:        fmt.Sprintf("ebsdirect-e2e-imds-%d", time.Now().UnixNano()),
+			Architecture:   "x86_64",
+			RootDeviceName: "/dev/xvda",
+			BootMode:       "legacy-bios",
+			IMDSSupport:    "v2.0",
+			Tags:           map[string]string{"ebsdirect-e2e": "1"},
+			SnapshotTags:   map[string]string{"ebsdirect-e2e": "1"},
+		},
+		bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	t.Cleanup(func() { _ = art.Destroy() })
+
+	di, err := ec2c.DescribeImages(ctx, &ec2.DescribeImagesInput{
+		ImageIds: []string{art.amiID},
+	})
+	if err != nil {
+		t.Fatalf("describe images: %v", err)
+	}
+	if len(di.Images) != 1 {
+		t.Fatalf("expected 1 image, got %d", len(di.Images))
+	}
+	if di.Images[0].ImdsSupport != ec2types.ImdsSupportValuesV20 {
+		t.Fatalf("ImdsSupport: got %q, want v2.0", di.Images[0].ImdsSupport)
+	}
+}

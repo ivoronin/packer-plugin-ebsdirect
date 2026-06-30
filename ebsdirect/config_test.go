@@ -30,6 +30,8 @@ func TestValidate(t *testing.T) {
 		{"bad arch", Config{AMIName: "a", Architecture: "ppc", BootMode: "legacy-bios"}, false},
 		{"bad bootmode", Config{AMIName: "a", Architecture: "x86_64", BootMode: "bios"}, false},
 		{"valid", Config{AMIName: "a", Architecture: "arm64", BootMode: "uefi"}, true},
+		{"imds v2.0", Config{AMIName: "a", Architecture: "x86_64", BootMode: "legacy-bios", IMDSSupport: "v2.0"}, true},
+		{"bad imds", Config{AMIName: "a", Architecture: "x86_64", BootMode: "legacy-bios", IMDSSupport: "v2"}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

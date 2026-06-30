@@ -39,6 +39,7 @@ Available on the [Packer integrations registry](https://developer.hashicorp.com/
 - Per-block SHA-256 plus a LINEAR aggregate checksum that AWS validates at `CompleteSnapshot`.
 - Registers a modern HVM AMI: ENA enabled, gp3 root volume (16 TiB ceiling), `x86_64` or `arm64`, boot mode `legacy-bios` / `uefi` / `uefi-preferred`.
 - Optional snapshot encryption (`ami_encrypt` / `ami_kms_key`) with the account default or a customer-managed KMS key.
+- Optional `imds_support = v2.0` so the AMI defaults to requiring IMDSv2 on instances launched from it.
 
 ## Installation
 
@@ -100,6 +101,7 @@ The same shape works after a `qemu` build that outputs a raw disk. The post-proc
 | `snapshot_tags` | no | - | Tags applied to the snapshot. |
 | `ami_encrypt` | no | `false` | Request encryption of the snapshot (and the resulting AMI). An account/region with EBS encryption-by-default still produces an encrypted snapshot regardless. |
 | `ami_kms_key` | no | account default EBS key | KMS key ARN for the encrypted snapshot. Requires `ami_encrypt = true`; ignored otherwise. |
+| `imds_support` | no | `""` | Set to `v2.0` so the AMI defaults to requiring IMDSv2 on launched instances. Image default, not a hard lock (overridable at `RunInstances`). |
 
 Credentials are read from the default AWS SDK chain (environment, `AWS_PROFILE` / shared config, SSO, instance role). There are no credential fields in the template.
 

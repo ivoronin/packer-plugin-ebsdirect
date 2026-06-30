@@ -20,6 +20,7 @@ type FlatConfig struct {
 	SnapshotTags   map[string]string `mapstructure:"snapshot_tags" cty:"snapshot_tags" hcl:"snapshot_tags"`
 	Encrypt        *bool             `mapstructure:"ami_encrypt" cty:"ami_encrypt" hcl:"ami_encrypt"`
 	KMSKey         *string           `mapstructure:"ami_kms_key" cty:"ami_kms_key" hcl:"ami_kms_key"`
+	IMDSSupport    *string           `mapstructure:"imds_support" cty:"imds_support" hcl:"imds_support"`
 }
 
 // FlatMapstructure returns a new FlatConfig.
@@ -44,6 +45,7 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"snapshot_tags":    &hcldec.AttrSpec{Name: "snapshot_tags", Type: cty.Map(cty.String), Required: false},
 		"ami_encrypt":      &hcldec.AttrSpec{Name: "ami_encrypt", Type: cty.Bool, Required: false},
 		"ami_kms_key":      &hcldec.AttrSpec{Name: "ami_kms_key", Type: cty.String, Required: false},
+		"imds_support":     &hcldec.AttrSpec{Name: "imds_support", Type: cty.String, Required: false},
 	}
 	return s
 }

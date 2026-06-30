@@ -38,6 +38,7 @@ trust policy.
 - `snapshot_tags` (map of string) - Tags applied to the snapshot.
 - `ami_encrypt` (bool) - Request encryption of the snapshot and the resulting AMI. Defaults to `false`. An account/region with EBS encryption-by-default still produces an encrypted snapshot regardless.
 - `ami_kms_key` (string) - KMS key ARN for the encrypted snapshot. Requires `ami_encrypt = true`; ignored otherwise. Defaults to the account default EBS key.
+- `imds_support` (string) - Set to `v2.0` so the AMI defaults to requiring IMDSv2 on instances launched from it (IMDSv1 disabled). This is an image default, not a hard lock - overridable at `RunInstances`. Defaults to `""`.
 
 Credentials are read from the default AWS SDK chain (environment, `AWS_PROFILE` /
 shared config, SSO, instance role). There are no credential fields in the template.

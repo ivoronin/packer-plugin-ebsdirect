@@ -45,6 +45,7 @@ func run(ctx context.Context, deps awsDeps, cfg Config, src io.ReaderAt, size in
 		Architecture:   cfg.Architecture,
 		RootDeviceName: cfg.RootDeviceName,
 		BootMode:       cfg.BootMode,
+		IMDSSupport:    cfg.IMDSSupport,
 		Tags:           cfg.Tags,
 	})
 	if err != nil {

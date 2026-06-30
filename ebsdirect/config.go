@@ -24,6 +24,7 @@ type Config struct {
 	SnapshotTags   map[string]string `mapstructure:"snapshot_tags"`
 	Encrypt        bool              `mapstructure:"ami_encrypt"`
 	KMSKey         string            `mapstructure:"ami_kms_key"`
+	IMDSSupport    string            `mapstructure:"imds_support"`
 }
 
 const (
@@ -61,6 +62,11 @@ func (c *Config) Validate() error {
 	case "legacy-bios", "uefi", "uefi-preferred":
 	default:
 		return fmt.Errorf("boot_mode must be legacy-bios, uefi, or uefi-preferred, got %q", c.BootMode)
+	}
+	switch c.IMDSSupport {
+	case "", "v2.0":
+	default:
+		return fmt.Errorf("imds_support must be empty or v2.0, got %q", c.IMDSSupport)
 	}
 	return nil
 }

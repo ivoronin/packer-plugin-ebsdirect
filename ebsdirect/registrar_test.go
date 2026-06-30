@@ -56,3 +56,29 @@ func TestRegister(t *testing.T) {
 		t.Fatal("ami tags must be applied via TagSpecifications/image")
 	}
 }
+
+func TestRegisterIMDSSupport(t *testing.T) {
+	cases := []struct {
+		name string
+		val  string
+		want ec2types.ImdsSupportValues
+	}{
+		{"v2.0", "v2.0", ec2types.ImdsSupportValuesV20},
+		{"empty", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &fakeRegistrar{}
+			if _, err := register(context.Background(), r, registerInput{
+				SnapshotID: "snap-1", Name: "img", Architecture: "x86_64",
+				RootDeviceName: "/dev/xvda", BootMode: "legacy-bios",
+				IMDSSupport: tc.val,
+			}); err != nil {
+				t.Fatalf("register: %v", err)
+			}
+			if r.got.ImdsSupport != tc.want {
+				t.Fatalf("ImdsSupport: got %q, want %q", r.got.ImdsSupport, tc.want)
+			}
+		})
+	}
+}
