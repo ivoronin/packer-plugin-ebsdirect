@@ -1,0 +1,9 @@
+packer-plugin-ebsdirect
+/dist/
+*.test
+*.out
+crash.log
+/docs/superpowers/
+/.superpowers/
+/.worklog/
+.DS_Store

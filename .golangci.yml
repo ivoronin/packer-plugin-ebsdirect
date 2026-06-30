@@ -1,0 +1,57 @@
+version: "2"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+linters:
+  default: all
+  # Bug-catchers stay on (govet, staticcheck, errcheck, gosec, unused, ineffassign,
+  # errorlint, bodyclose, contextcheck, ...). The disabled set is opinionated style
+  # noise or rules that fight SDK-mandated shapes:
+  #   - revive: var-naming demands BuilderID/ID, but packer.Artifact mandates
+  #     BuilderId()/Id(); also nags for doc comments on interface-impl methods.
+  #   - exhaustive: the snapshot-state switch is intentionally default-driven.
+  #   - err113/noinlineerr: inline fmt.Errorf is this codebase's deliberate style
+  #     (wrapped with %w where callers branch).
+  disable:
+    - cyclop
+    - depguard
+    - err113
+    - exhaustive
+    - exhaustruct
+    - funcorder
+    - gochecknoglobals
+    - gocognit
+    - goconst
+    - gomodguard
+    - inamedparam
+    - intrange
+    - ireturn
+    - lll
+    - mnd
+    - modernize
+    - nlreturn
+    - noinlineerr
+    - nonamedreturns
+    - paralleltest
+    - revive
+    - testpackage
+    - varnamelen
+    - wrapcheck
+    - wsl
+    - wsl_v5
+  settings:
+    gomoddirectives:
+      # Load-bearing SDK workaround (packer-plugin-sdk issue 187); must be allowed.
+      replace-allow-list:
+        - github.com/zclconf/go-cty
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - forcetypeassert
+          - funlen
+          - gosec
