@@ -47,3 +47,50 @@ jobs:
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           API_VERSION: ${{ steps.plugin_describe.outputs.api_version }}
+
+  # Notify the HashiCorp integrations registry only AFTER goreleaser has
+  # published the release with all assets (binaries, SHA256SUMS, signature,
+  # docs.zip). needs: goreleaser guarantees that ordering, so the registry
+  # never pulls a release whose assets are not up yet.
+  notify-release:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.ref }}
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: 'go.mod'
+      # Guard: never notify the registry about a release whose compiled docs
+      # are not committed (the registry renders the committed .web-docs).
+      - shell: bash
+        run: make generate
+      - shell: bash
+        run: |
+          if [[ -z "$(git status -s)" ]]; then
+            echo "OK"
+          else
+            echo "Docs have been updated, but the compiled docs have not been committed."
+            echo "Run 'make generate', and commit the result to resolve this error."
+            exit 1
+          fi
+      - name: Strip leading v from version tag
+        id: strip
+        env:
+          REF: ${{ github.ref_name }}
+        run: echo "packer-version=$(echo "$REF" | sed -E 's/v?([0-9]+\.[0-9]+\.[0-9]+)/\1/')" >> "$GITHUB_OUTPUT"
+      - name: Checkout integration-release-action
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: hashicorp/integration-release-action
+          path: ./integration-release-action
+      - name: Notify Release
+        uses: ./integration-release-action
+        with:
+          integration_identifier: 'packer/ivoronin/ebsdirect'
+          release_version: ${{ steps.strip.outputs.packer-version }}
+          release_sha: ${{ github.ref }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -29,6 +29,8 @@ post-processor "ebsdirect" {
 
 This drops the two things `amazon-import` requires that have nothing to do with the image itself: the S3 bucket you upload through, and the `vmimport` IAM role with its trust policy.
 
+Available on the [Packer integrations registry](https://developer.hashicorp.com/packer/integrations/ivoronin/ebsdirect).
+
 ## Features
 
 - Uploads via the EBS direct APIs - no S3 bucket and no `vmimport` role to set up.

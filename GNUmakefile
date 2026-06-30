@@ -21,11 +21,19 @@ test:
 install-packer-sdc:
 	@go install github.com/hashicorp/packer-plugin-sdk/cmd/packer-sdc@${HASHICORP_PACKER_PLUGIN_SDK_VERSION}
 
+ci-release-docs: install-packer-sdc
+	@packer-sdc renderdocs -src docs -partials docs-partials/ -dst docs/
+	@/bin/sh -c "[ -d docs ] && zip -r docs.zip docs/"
+
 plugin-check: install-packer-sdc build
 	@packer-sdc plugin-check ${BINARY}
 
 generate: install-packer-sdc
 	@go generate ./...
+	@if [ -d ".docs" ]; then rm -r ".docs"; fi
+	@packer-sdc renderdocs -src "docs" -partials docs-partials/ -dst ".docs/"
+	@./.web-docs/scripts/compile-to-webdocs.sh "." ".docs" ".web-docs" "ivoronin"
+	@rm -r ".docs"
 
 testacc: dev
 	@PACKER_ACC=1 go test -count $(COUNT) -v $(TEST) -timeout=120m

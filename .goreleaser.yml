@@ -10,7 +10,7 @@ before:
     - go test ./...
     # As part of the release doc files are included as a separate deliverable for
     # consumption by Packer.io. To include a separate docs.zip uncomment the following command.
-    # - make ci-release-docs  # integrations-portal docs deferred until registry publishing
+    - make ci-release-docs
     # Check plugin compatibility with required version of the Packer SDK
     - make plugin-check
 builds:
@@ -75,8 +75,8 @@ release:
   # As part of the release doc files are included as a separate deliverable for consumption by Packer.io.
   # To include a separate docs.zip uncomment the extra_files config and the docs.zip command hook above.
   # docs.zip is produced by ci-release-docs (deferred until registry publishing); re-enable together.
-  # extra_files:
-  # - glob: ./docs.zip
+  extra_files:
+  - glob: ./docs.zip
 
 changelog:
   disable: true

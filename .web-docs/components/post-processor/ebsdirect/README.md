@@ -1,0 +1,76 @@
+Type: `ebsdirect`
+
+The `ebsdirect` post-processor takes a raw disk image from a previous build step and
+turns it into an AMI without going through S3. It uploads the image straight into an
+EBS snapshot with the EBS direct APIs (`StartSnapshot` / `PutSnapshotBlock` /
+`CompleteSnapshot`), writing 512 KiB blocks in parallel and skipping all-zero ones,
+then registers that snapshot as an AMI with `RegisterImage`. Credentials come from the
+default AWS SDK chain.
+
+This drops the two things `amazon-import` requires that have nothing to do with the
+image itself: the S3 bucket you upload through, and the `vmimport` IAM role with its
+trust policy.
+
+## Configuration
+
+### Required
+
+- `ami_name` (string) - Name of the registered AMI.
+
+### Optional
+
+- `ami_description` (string) - AMI description. Defaults to `""`.
+- `architecture` (string) - `x86_64` or `arm64` (arm64 requires `uefi`). Defaults to `x86_64`.
+- `boot_mode` (string) - `legacy-bios`, `uefi`, or `uefi-preferred`. Defaults to `legacy-bios`.
+- `root_device_name` (string) - Root device name on the AMI. Defaults to `/dev/xvda`.
+- `region` (string) - Target region; otherwise `AWS_REGION` or the active profile. Defaults to the SDK chain.
+- `tags` (map of string) - Tags applied to the AMI.
+- `snapshot_tags` (map of string) - Tags applied to the snapshot.
+
+Credentials are read from the default AWS SDK chain (environment, `AWS_PROFILE` /
+shared config, SSO, instance role). There are no credential fields in the template.
+
+## Example Usage
+
+```hcl
+source "file" "image" {
+  source = "disk.raw"   # raw format, a whole number of GiB
+  target = "disk.raw"
+}
+
+build {
+  sources = ["source.file.image"]
+
+  post-processor "ebsdirect" {
+    ami_name      = "my-image"
+    architecture  = "x86_64"
+    boot_mode     = "legacy-bios"
+    tags          = { project = "demo" }
+    snapshot_tags = { project = "demo" }
+  }
+}
+```
+
+## Requirements
+
+- A raw disk image whose size is a whole number of GiB. Use `qemu-img convert -O raw`
+  to convert and `qemu-img resize` to round up if needed.
+- IAM permissions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["ebs:StartSnapshot", "ebs:PutSnapshotBlock", "ebs:CompleteSnapshot"],
+      "Resource": "arn:aws:ec2:*::snapshot/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["ec2:RegisterImage", "ec2:DescribeSnapshots", "ec2:DeregisterImage", "ec2:DeleteSnapshot", "ec2:CreateTags"],
+      "Resource": "*"
+    }
+  ]
+}
+```
