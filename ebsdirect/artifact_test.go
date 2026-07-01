@@ -14,10 +14,12 @@ import (
 
 type fakeDestroyer struct {
 	deregistered, deletedSnap string
+	deregCalled               bool
 	deregErr, delErr          error
 }
 
 func (f *fakeDestroyer) DeregisterImage(_ context.Context, in *ec2.DeregisterImageInput, _ ...func(*ec2.Options)) (*ec2.DeregisterImageOutput, error) {
+	f.deregCalled = true
 	f.deregistered = aws.ToString(in.ImageId)
 	if f.deregErr != nil {
 		return nil, f.deregErr
@@ -47,6 +49,22 @@ func TestArtifact(t *testing.T) {
 	}
 	if d.deregistered != "ami-9" || d.deletedSnap != "snap-9" {
 		t.Fatalf("destroy must deregister ami and delete snapshot: %+v", d)
+	}
+}
+
+// Destroy on a partial rollback (snapshot uploaded, AMI never registered) must
+// delete the orphan snapshot but skip DeregisterImage entirely: there is no AMI.
+func TestArtifactDestroyNoAMI(t *testing.T) {
+	d := &fakeDestroyer{}
+	a := &amiArtifact{region: "eu-west-1", snapshotID: "snap-9", destroyer: d}
+	if err := a.Destroy(); err != nil {
+		t.Fatalf("destroy: %v", err)
+	}
+	if d.deregCalled {
+		t.Fatal("DeregisterImage must not be called when there is no AMI")
+	}
+	if d.deletedSnap != "snap-9" {
+		t.Fatalf("orphan snapshot must be deleted, got %q", d.deletedSnap)
 	}
 }
 

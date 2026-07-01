@@ -29,6 +29,9 @@ func TestRunCleansSnapshotOnRegisterFailure(t *testing.T) {
 	if d.deletedSnap != "snap-test" {
 		t.Fatalf("orphan snapshot must be deleted, got %q", d.deletedSnap)
 	}
+	if d.deregCalled {
+		t.Fatal("no AMI was registered; DeregisterImage must not be called")
+	}
 }
 
 func TestRunHappyPath(t *testing.T) {

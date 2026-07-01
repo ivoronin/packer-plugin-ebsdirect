@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ebs"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -25,10 +24,10 @@ type awsDeps struct {
 }
 
 // run uploads the image to a snapshot, registers an AMI, then shares its launch
-// permission. On registration failure it best-effort deletes the orphaned
-// snapshot; on share failure it best-effort tears down the registered AMI. Any
-// cleanup error is joined to the returned error. The cleanup calls use
-// context.Background so teardown runs even if the request ctx is cancelled.
+// permission. The artifact doubles as the rollback ladder: it is built right
+// after the upload and gains the AMI id after register, so on any step failure
+// art.Destroy() unwinds however far the run got, its error joined to the
+// returned one. The teardown context policy lives in Destroy.
 func run(ctx context.Context, deps awsDeps, cfg Config, src io.ReaderAt, size int64) (*amiArtifact, error) {
 	snapshotID, err := upload(ctx, deps.writer, deps.waiter, uploadInput{
 		Source:      src,
@@ -42,6 +41,10 @@ func run(ctx context.Context, deps awsDeps, cfg Config, src io.ReaderAt, size in
 		return nil, err
 	}
 
+	// The artifact is the rollback ladder: it carries the snapshot now and gains
+	// the AMI id after register, so art.Destroy() unwinds however far run got.
+	art := &amiArtifact{region: deps.region, snapshotID: snapshotID, destroyer: deps.destroyer}
+
 	amiID, err := register(ctx, deps.registrar, registerInput{
 		SnapshotID:     snapshotID,
 		Name:           cfg.AMIName,
@@ -53,25 +56,17 @@ func run(ctx context.Context, deps awsDeps, cfg Config, src io.ReaderAt, size in
 		Tags:           cfg.Tags,
 	})
 	if err != nil {
-		if _, delErr := deps.destroyer.DeleteSnapshot(context.Background(), &ec2.DeleteSnapshotInput{ //nolint:contextcheck // teardown must run even if the request ctx is cancelled
-			SnapshotId: aws.String(snapshotID),
-		}); delErr != nil {
-			return nil, errors.Join(err, fmt.Errorf("cleanup snapshot %s: %w", snapshotID, delErr))
-		}
-		return nil, err
+		return nil, errors.Join(err, art.Destroy()) //nolint:contextcheck // Destroy uses context.Background (packer.Artifact.Destroy takes no ctx) so teardown runs even if the request ctx is cancelled
 	}
+	art.amiID = amiID
 
-	art := &amiArtifact{region: deps.region, amiID: amiID, snapshotID: snapshotID, destroyer: deps.destroyer}
 	if err := share(ctx, deps.sharer, amiID, shareInput{
 		Users:   cfg.AMIUsers,
 		Groups:  cfg.AMIGroups,
 		OrgArns: cfg.AMIOrgArns,
 		OuArns:  cfg.AMIOuArns,
 	}); err != nil {
-		if derr := art.Destroy(); derr != nil { //nolint:contextcheck // Destroy intentionally uses context.Background so teardown runs even if the request ctx is cancelled
-			return nil, errors.Join(err, derr)
-		}
-		return nil, err
+		return nil, errors.Join(err, art.Destroy()) //nolint:contextcheck // Destroy uses context.Background (packer.Artifact.Destroy takes no ctx) so teardown runs even if the request ctx is cancelled
 	}
 	return art, nil
 }
