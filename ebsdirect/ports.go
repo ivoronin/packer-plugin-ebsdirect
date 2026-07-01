@@ -28,6 +28,11 @@ type imageRegistrar interface {
 	RegisterImage(context.Context, *ec2.RegisterImageInput, ...func(*ec2.Options)) (*ec2.RegisterImageOutput, error)
 }
 
+// imageSharer sets AMI launch permissions. Satisfied by *ec2.Client.
+type imageSharer interface {
+	ModifyImageAttribute(context.Context, *ec2.ModifyImageAttributeInput, ...func(*ec2.Options)) (*ec2.ModifyImageAttributeOutput, error)
+}
+
 // imageDestroyer tears down an AMI and snapshot. Satisfied by *ec2.Client.
 type imageDestroyer interface {
 	DeregisterImage(context.Context, *ec2.DeregisterImageInput, ...func(*ec2.Options)) (*ec2.DeregisterImageOutput, error)

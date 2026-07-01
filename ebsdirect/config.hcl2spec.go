@@ -21,6 +21,10 @@ type FlatConfig struct {
 	Encrypt        *bool             `mapstructure:"ami_encrypt" cty:"ami_encrypt" hcl:"ami_encrypt"`
 	KMSKey         *string           `mapstructure:"ami_kms_key" cty:"ami_kms_key" hcl:"ami_kms_key"`
 	IMDSSupport    *string           `mapstructure:"imds_support" cty:"imds_support" hcl:"imds_support"`
+	AMIUsers       []string          `mapstructure:"ami_users" cty:"ami_users" hcl:"ami_users"`
+	AMIGroups      []string          `mapstructure:"ami_groups" cty:"ami_groups" hcl:"ami_groups"`
+	AMIOrgArns     []string          `mapstructure:"ami_org_arns" cty:"ami_org_arns" hcl:"ami_org_arns"`
+	AMIOuArns      []string          `mapstructure:"ami_ou_arns" cty:"ami_ou_arns" hcl:"ami_ou_arns"`
 }
 
 // FlatMapstructure returns a new FlatConfig.
@@ -46,6 +50,10 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"ami_encrypt":      &hcldec.AttrSpec{Name: "ami_encrypt", Type: cty.Bool, Required: false},
 		"ami_kms_key":      &hcldec.AttrSpec{Name: "ami_kms_key", Type: cty.String, Required: false},
 		"imds_support":     &hcldec.AttrSpec{Name: "imds_support", Type: cty.String, Required: false},
+		"ami_users":        &hcldec.AttrSpec{Name: "ami_users", Type: cty.List(cty.String), Required: false},
+		"ami_groups":       &hcldec.AttrSpec{Name: "ami_groups", Type: cty.List(cty.String), Required: false},
+		"ami_org_arns":     &hcldec.AttrSpec{Name: "ami_org_arns", Type: cty.List(cty.String), Required: false},
+		"ami_ou_arns":      &hcldec.AttrSpec{Name: "ami_ou_arns", Type: cty.List(cty.String), Required: false},
 	}
 	return s
 }

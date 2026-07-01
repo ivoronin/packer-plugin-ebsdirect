@@ -5,21 +5,31 @@ package ebsdirect
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
 
-type fakeDestroyer struct{ deregistered, deletedSnap string }
+type fakeDestroyer struct {
+	deregistered, deletedSnap string
+	deregErr, delErr          error
+}
 
 func (f *fakeDestroyer) DeregisterImage(_ context.Context, in *ec2.DeregisterImageInput, _ ...func(*ec2.Options)) (*ec2.DeregisterImageOutput, error) {
 	f.deregistered = aws.ToString(in.ImageId)
+	if f.deregErr != nil {
+		return nil, f.deregErr
+	}
 	return &ec2.DeregisterImageOutput{}, nil
 }
 
 func (f *fakeDestroyer) DeleteSnapshot(_ context.Context, in *ec2.DeleteSnapshotInput, _ ...func(*ec2.Options)) (*ec2.DeleteSnapshotOutput, error) {
 	f.deletedSnap = aws.ToString(in.SnapshotId)
+	if f.delErr != nil {
+		return nil, f.delErr
+	}
 	return &ec2.DeleteSnapshotOutput{}, nil
 }
 
@@ -37,5 +47,24 @@ func TestArtifact(t *testing.T) {
 	}
 	if d.deregistered != "ami-9" || d.deletedSnap != "snap-9" {
 		t.Fatalf("destroy must deregister ami and delete snapshot: %+v", d)
+	}
+}
+
+// A failed DeregisterImage must not stop the snapshot delete, and both errors
+// must surface.
+func TestArtifactDestroyBestEffort(t *testing.T) {
+	deregErr := errors.New("deregister boom")
+	delErr := errors.New("delete boom")
+	d := &fakeDestroyer{deregErr: deregErr, delErr: delErr}
+	a := &amiArtifact{region: "eu-west-1", amiID: "ami-9", snapshotID: "snap-9", destroyer: d}
+	err := a.Destroy()
+	if err == nil {
+		t.Fatal("destroy must report the failures")
+	}
+	if d.deletedSnap != "snap-9" {
+		t.Fatal("snapshot delete must be attempted even when deregister fails")
+	}
+	if !errors.Is(err, deregErr) || !errors.Is(err, delErr) {
+		t.Fatalf("both errors must surface, got %v", err)
 	}
 }

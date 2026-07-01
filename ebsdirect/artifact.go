@@ -5,6 +5,7 @@ package ebsdirect
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -28,16 +29,20 @@ func (a *amiArtifact) Id() string               { return fmt.Sprintf("%s:%s", a.
 func (a *amiArtifact) String() string           { return fmt.Sprintf("AMI %s in %s", a.amiID, a.region) }
 func (a *amiArtifact) State(string) interface{} { return nil }
 
+// Destroy is best-effort: it attempts both the deregister and the snapshot
+// delete even if the first fails, so a failed DeregisterImage never leaves the
+// snapshot orphaned, and joins whatever errors came back.
 func (a *amiArtifact) Destroy() error {
+	var errs []error
 	if _, err := a.destroyer.DeregisterImage(context.Background(), &ec2.DeregisterImageInput{
 		ImageId: aws.String(a.amiID),
 	}); err != nil {
-		return fmt.Errorf("deregister %s: %w", a.amiID, err)
+		errs = append(errs, fmt.Errorf("deregister %s: %w", a.amiID, err))
 	}
 	if _, err := a.destroyer.DeleteSnapshot(context.Background(), &ec2.DeleteSnapshotInput{
 		SnapshotId: aws.String(a.snapshotID),
 	}); err != nil {
-		return fmt.Errorf("delete snapshot %s: %w", a.snapshotID, err)
+		errs = append(errs, fmt.Errorf("delete snapshot %s: %w", a.snapshotID, err))
 	}
-	return nil
+	return errors.Join(errs...)
 }

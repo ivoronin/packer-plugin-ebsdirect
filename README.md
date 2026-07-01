@@ -40,6 +40,7 @@ Available on the [Packer integrations registry](https://developer.hashicorp.com/
 - Registers a modern HVM AMI: ENA enabled, gp3 root volume (16 TiB ceiling), `x86_64` or `arm64`, boot mode `legacy-bios` / `uefi` / `uefi-preferred`.
 - Optional snapshot encryption (`ami_encrypt` / `ami_kms_key`) with the account default or a customer-managed KMS key.
 - Optional `imds_support = v2.0` so the AMI defaults to requiring IMDSv2 on instances launched from it.
+- Share the AMI's launch permission with accounts, organizations, OUs, or publicly (`ami_users` / `ami_org_arns` / `ami_ou_arns` / `ami_groups`).
 
 ## Installation
 
@@ -102,6 +103,10 @@ The same shape works after a `qemu` build that outputs a raw disk. The post-proc
 | `ami_encrypt` | no | `false` | Request encryption of the snapshot (and the resulting AMI). An account/region with EBS encryption-by-default still produces an encrypted snapshot regardless. |
 | `ami_kms_key` | no | account default EBS key | KMS key ARN for the encrypted snapshot. Requires `ami_encrypt = true`; ignored otherwise. |
 | `imds_support` | no | `""` | Set to `v2.0` so the AMI defaults to requiring IMDSv2 on launched instances. Image default, not a hard lock (overridable at `RunInstances`). |
+| `ami_users` | no | - | Account IDs granted launch permission on the AMI. |
+| `ami_groups` | no | - | Launch-permission groups; only `all` (makes the AMI public) is supported. |
+| `ami_org_arns` | no | - | Organization ARNs granted launch permission. |
+| `ami_ou_arns` | no | - | Organizational-unit ARNs granted launch permission. |
 
 Credentials are read from the default AWS SDK chain (environment, `AWS_PROFILE` / shared config, SSO, instance role). There are no credential fields in the template.
 
@@ -122,7 +127,7 @@ Credentials are read from the default AWS SDK chain (environment, `AWS_PROFILE` 
     },
     {
       "Effect": "Allow",
-      "Action": ["ec2:RegisterImage", "ec2:DescribeSnapshots", "ec2:DeregisterImage", "ec2:DeleteSnapshot", "ec2:CreateTags"],
+      "Action": ["ec2:RegisterImage", "ec2:DescribeSnapshots", "ec2:DeregisterImage", "ec2:DeleteSnapshot", "ec2:CreateTags", "ec2:ModifyImageAttribute"],
       "Resource": "*"
     },
     {
@@ -135,6 +140,8 @@ Credentials are read from the default AWS SDK chain (environment, `AWS_PROFILE` 
 ```
 
 The KMS actions are only needed when `ami_encrypt` is used with a customer-managed key; the account default EBS key is already usable by account principals.
+
+Sharing does not share the underlying snapshot: AWS gives recipients snapshot access for launch. Sharing an encrypted AMI works only when it is backed by a customer-managed KMS key (not the default `aws/ebs` key), and the recipient accounts must be granted access to that key.
 
 ## License
 

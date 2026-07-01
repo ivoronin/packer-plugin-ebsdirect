@@ -66,6 +66,7 @@ func newE2EDeps(t *testing.T) (context.Context, awsDeps, *ec2.Client, *ebs.Clien
 		writer:    ebsc,
 		waiter:    ec2c,
 		registrar: ec2c,
+		sharer:    ec2c,
 		destroyer: ec2c,
 		region:    cfg.Region,
 	}, ec2c, ebsc
@@ -316,5 +317,54 @@ func TestE2EIMDSSupport(t *testing.T) {
 	}
 	if di.Images[0].ImdsSupport != ec2types.ImdsSupportValuesV20 {
 		t.Fatalf("ImdsSupport: got %q, want v2.0", di.Images[0].ImdsSupport)
+	}
+}
+
+// TestE2EAMISharing registers an AMI, shares its launch permission with a
+// placeholder account id, and verifies DescribeImageAttribute reports it.
+//
+// Gate: requires PACKER_ACC=1 and AWS credentials with region configured.
+// Teardown: deregisters the AMI (which removes the launch permission) and
+// deletes the snapshot via t.Cleanup.
+func TestE2EAMISharing(t *testing.T) {
+	ctx, deps, ec2c, _ := newE2EDeps(t)
+
+	data, _ := makeImage()
+
+	// AWS does not validate account existence when adding launch permissions,
+	// so a placeholder id is a safe, verifiable share on a synthetic AMI.
+	const shareAcct = "123456789012"
+
+	art, err := run(ctx, deps,
+		Config{
+			AMIName:        fmt.Sprintf("ebsdirect-e2e-share-%d", time.Now().UnixNano()),
+			Architecture:   "x86_64",
+			RootDeviceName: "/dev/xvda",
+			BootMode:       "legacy-bios",
+			AMIUsers:       []string{shareAcct},
+			Tags:           map[string]string{"ebsdirect-e2e": "1"},
+			SnapshotTags:   map[string]string{"ebsdirect-e2e": "1"},
+		},
+		bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	t.Cleanup(func() { _ = art.Destroy() })
+
+	da, err := ec2c.DescribeImageAttribute(ctx, &ec2.DescribeImageAttributeInput{
+		ImageId:   aws.String(art.amiID),
+		Attribute: ec2types.ImageAttributeNameLaunchPermission,
+	})
+	if err != nil {
+		t.Fatalf("describe image attribute: %v", err)
+	}
+	var found bool
+	for _, p := range da.LaunchPermissions {
+		if aws.ToString(p.UserId) == shareAcct {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("launch permission for %s not found: %+v", shareAcct, da.LaunchPermissions)
 	}
 }

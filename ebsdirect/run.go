@@ -19,12 +19,16 @@ type awsDeps struct {
 	writer    snapshotWriter
 	waiter    snapshotWaiter
 	registrar imageRegistrar
+	sharer    imageSharer
 	destroyer imageDestroyer
 	region    string
 }
 
-// run uploads the image to a snapshot, registers an AMI, and on registration
-// failure best-effort deletes the orphaned snapshot, joining any cleanup error.
+// run uploads the image to a snapshot, registers an AMI, then shares its launch
+// permission. On registration failure it best-effort deletes the orphaned
+// snapshot; on share failure it best-effort tears down the registered AMI. Any
+// cleanup error is joined to the returned error. The cleanup calls use
+// context.Background so teardown runs even if the request ctx is cancelled.
 func run(ctx context.Context, deps awsDeps, cfg Config, src io.ReaderAt, size int64) (*amiArtifact, error) {
 	snapshotID, err := upload(ctx, deps.writer, deps.waiter, uploadInput{
 		Source:      src,
@@ -49,7 +53,7 @@ func run(ctx context.Context, deps awsDeps, cfg Config, src io.ReaderAt, size in
 		Tags:           cfg.Tags,
 	})
 	if err != nil {
-		if _, delErr := deps.destroyer.DeleteSnapshot(ctx, &ec2.DeleteSnapshotInput{
+		if _, delErr := deps.destroyer.DeleteSnapshot(context.Background(), &ec2.DeleteSnapshotInput{ //nolint:contextcheck // teardown must run even if the request ctx is cancelled
 			SnapshotId: aws.String(snapshotID),
 		}); delErr != nil {
 			return nil, errors.Join(err, fmt.Errorf("cleanup snapshot %s: %w", snapshotID, delErr))
@@ -57,7 +61,19 @@ func run(ctx context.Context, deps awsDeps, cfg Config, src io.ReaderAt, size in
 		return nil, err
 	}
 
-	return &amiArtifact{region: deps.region, amiID: amiID, snapshotID: snapshotID, destroyer: deps.destroyer}, nil
+	art := &amiArtifact{region: deps.region, amiID: amiID, snapshotID: snapshotID, destroyer: deps.destroyer}
+	if err := share(ctx, deps.sharer, amiID, shareInput{
+		Users:   cfg.AMIUsers,
+		Groups:  cfg.AMIGroups,
+		OrgArns: cfg.AMIOrgArns,
+		OuArns:  cfg.AMIOuArns,
+	}); err != nil {
+		if derr := art.Destroy(); derr != nil { //nolint:contextcheck // Destroy intentionally uses context.Background so teardown runs even if the request ctx is cancelled
+			return nil, errors.Join(err, derr)
+		}
+		return nil, err
+	}
+	return art, nil
 }
 
 var errNoRegion = errors.New("no AWS region; set the region field or AWS_REGION")
@@ -93,6 +109,7 @@ func buildDeps(ctx context.Context, region string) (awsDeps, error) {
 		writer:    ebs.NewFromConfig(cfg),
 		waiter:    ec2c,
 		registrar: ec2c,
+		sharer:    ec2c,
 		destroyer: ec2c,
 		region:    cfg.Region,
 	}, nil

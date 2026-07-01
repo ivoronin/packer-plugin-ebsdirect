@@ -25,6 +25,10 @@ type Config struct {
 	Encrypt        bool              `mapstructure:"ami_encrypt"`
 	KMSKey         string            `mapstructure:"ami_kms_key"`
 	IMDSSupport    string            `mapstructure:"imds_support"`
+	AMIUsers       []string          `mapstructure:"ami_users"`
+	AMIGroups      []string          `mapstructure:"ami_groups"`
+	AMIOrgArns     []string          `mapstructure:"ami_org_arns"`
+	AMIOuArns      []string          `mapstructure:"ami_ou_arns"`
 }
 
 const (
@@ -67,6 +71,28 @@ func (c *Config) Validate() error {
 	case "", "v2.0":
 	default:
 		return fmt.Errorf("imds_support must be empty or v2.0, got %q", c.IMDSSupport)
+	}
+	for _, g := range c.AMIGroups {
+		if g != "all" {
+			return fmt.Errorf("ami_groups only supports %q, got %q", "all", g)
+		}
+		if c.Encrypt {
+			return errors.New(`ami_encrypt cannot be combined with ami_groups = ["all"]: an encrypted AMI cannot be made public`)
+		}
+	}
+	for _, f := range []struct {
+		name string
+		vals []string
+	}{
+		{"ami_users", c.AMIUsers},
+		{"ami_org_arns", c.AMIOrgArns},
+		{"ami_ou_arns", c.AMIOuArns},
+	} {
+		for _, v := range f.vals {
+			if v == "" {
+				return fmt.Errorf("%s contains an empty entry", f.name)
+			}
+		}
 	}
 	return nil
 }

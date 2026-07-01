@@ -8,6 +8,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
 
 func TestRunCleansSnapshotOnRegisterFailure(t *testing.T) {
@@ -71,5 +74,99 @@ func TestRequireRegion(t *testing.T) {
 	}
 	if err := requireRegion("eu-central-1"); err != nil {
 		t.Fatalf("resolved region must be ok, got %v", err)
+	}
+}
+
+func TestRunCleansAMIOnShareFailure(t *testing.T) {
+	d := &fakeDestroyer{}
+	deps := awsDeps{
+		writer:    &fakeWriter{},
+		waiter:    fakeWaiter{},
+		registrar: &fakeRegistrar{},
+		sharer:    &fakeSharer{err: errors.New("boom")},
+		destroyer: d,
+		region:    "eu-west-1",
+	}
+	_, err := run(context.Background(), deps,
+		Config{AMIName: "img", AMIUsers: []string{"111111111111"}},
+		bytes.NewReader([]byte{1, 2, 3, 4}), 4)
+	if err == nil {
+		t.Fatal("run must fail when sharing fails")
+	}
+	if d.deregistered != "ami-test" || d.deletedSnap != "snap-test" {
+		t.Fatalf("failed share must tear down AMI and snapshot, got %+v", d)
+	}
+}
+
+// When the share cleanup itself fails, run must join the share error and the
+// teardown error rather than dropping either.
+func TestRunShareFailureJoinsCleanupError(t *testing.T) {
+	shareErr := errors.New("share boom")
+	d := &fakeDestroyer{deregErr: errors.New("deregister boom")}
+	deps := awsDeps{
+		writer:    &fakeWriter{},
+		waiter:    fakeWaiter{},
+		registrar: &fakeRegistrar{},
+		sharer:    &fakeSharer{err: shareErr},
+		destroyer: d,
+		region:    "eu-west-1",
+	}
+	_, err := run(context.Background(), deps,
+		Config{AMIName: "img", AMIUsers: []string{"111111111111"}},
+		bytes.NewReader([]byte{1, 2, 3, 4}), 4)
+	if err == nil {
+		t.Fatal("run must fail when sharing fails")
+	}
+	if !errors.Is(err, shareErr) || !errors.Is(err, d.deregErr) {
+		t.Fatalf("run must join the share error and the cleanup error, got %v", err)
+	}
+}
+
+// run must map every Config sharing field onto the ModifyImageAttribute call,
+// guarding against a cfg -> shareInput copy-paste swap.
+func TestRunSharesAllPrincipals(t *testing.T) {
+	s := &fakeSharer{}
+	deps := awsDeps{
+		writer:    &fakeWriter{},
+		waiter:    fakeWaiter{},
+		registrar: &fakeRegistrar{},
+		sharer:    s,
+		destroyer: &fakeDestroyer{},
+		region:    "eu-west-1",
+	}
+	_, err := run(context.Background(), deps,
+		Config{
+			AMIName:    "img",
+			AMIUsers:   []string{"111111111111"},
+			AMIGroups:  []string{"all"},
+			AMIOrgArns: []string{"arn:aws:organizations::111111111111:organization/o-abc"},
+			AMIOuArns:  []string{"arn:aws:organizations::111111111111:ou/o-abc/ou-xyz"},
+		},
+		bytes.NewReader([]byte{1, 2, 3, 4}), 4)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if s.got == nil {
+		t.Fatal("ModifyImageAttribute was not called")
+	}
+	add := s.got.LaunchPermission.Add
+	if len(add) != 4 {
+		t.Fatalf("want 4 launch permissions, got %d", len(add))
+	}
+	var user, group, org, ou bool
+	for _, p := range add {
+		switch {
+		case aws.ToString(p.UserId) == "111111111111":
+			user = true
+		case p.Group == ec2types.PermissionGroupAll:
+			group = true
+		case aws.ToString(p.OrganizationArn) == "arn:aws:organizations::111111111111:organization/o-abc":
+			org = true
+		case aws.ToString(p.OrganizationalUnitArn) == "arn:aws:organizations::111111111111:ou/o-abc/ou-xyz":
+			ou = true
+		}
+	}
+	if !user || !group || !org || !ou {
+		t.Fatalf("cfg -> shareInput mapping dropped a principal: user=%v group=%v org=%v ou=%v", user, group, org, ou)
 	}
 }

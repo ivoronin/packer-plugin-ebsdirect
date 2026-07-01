@@ -32,6 +32,14 @@ func TestValidate(t *testing.T) {
 		{"valid", Config{AMIName: "a", Architecture: "arm64", BootMode: "uefi"}, true},
 		{"imds v2.0", Config{AMIName: "a", Architecture: "x86_64", BootMode: "legacy-bios", IMDSSupport: "v2.0"}, true},
 		{"bad imds", Config{AMIName: "a", Architecture: "x86_64", BootMode: "legacy-bios", IMDSSupport: "v2"}, false},
+		{"share all group", Config{AMIName: "a", Architecture: "x86_64", BootMode: "legacy-bios", AMIGroups: []string{"all"}}, true},
+		{"bad group", Config{AMIName: "a", Architecture: "x86_64", BootMode: "legacy-bios", AMIGroups: []string{"public"}}, false},
+		{"share users ok", Config{AMIName: "a", Architecture: "x86_64", BootMode: "legacy-bios", AMIUsers: []string{"111111111111"}}, true},
+		{"encrypt plus public", Config{AMIName: "a", Architecture: "x86_64", BootMode: "legacy-bios", Encrypt: true, AMIGroups: []string{"all"}}, false},
+		{"encrypt plus users ok", Config{AMIName: "a", Architecture: "x86_64", BootMode: "legacy-bios", Encrypt: true, AMIUsers: []string{"111111111111"}}, true},
+		{"empty user", Config{AMIName: "a", Architecture: "x86_64", BootMode: "legacy-bios", AMIUsers: []string{""}}, false},
+		{"empty org arn", Config{AMIName: "a", Architecture: "x86_64", BootMode: "legacy-bios", AMIOrgArns: []string{""}}, false},
+		{"empty ou arn", Config{AMIName: "a", Architecture: "x86_64", BootMode: "legacy-bios", AMIOuArns: []string{""}}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
